@@ -158,7 +158,8 @@ export function useI18n() {
   return useContext(I18nContext);
 }
 
-// In-memory translation cache
+// LRU translation cache (max 200 entries)
+const CACHE_MAX = 200;
 const translationCache = new Map<string, string>();
 
 export async function translateText(
@@ -177,6 +178,10 @@ export async function translateText(
     );
     const json = await res.json();
     const translated: string = json.responseData?.translatedText ?? text;
+    if (translationCache.size >= CACHE_MAX) {
+      const first = translationCache.keys().next().value;
+      if (first !== undefined) translationCache.delete(first);
+    }
     translationCache.set(key, translated);
     return translated;
   } catch {

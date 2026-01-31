@@ -15,17 +15,7 @@ interface SightingView {
   expires_at: string;
 }
 
-// Inject MapLibre CSS once via <link> tag
-if (typeof document !== "undefined") {
-  const id = "maplibre-css";
-  if (!document.getElementById(id)) {
-    const link = document.createElement("link");
-    link.id = id;
-    link.rel = "stylesheet";
-    link.href = "https://unpkg.com/maplibre-gl@5.17.0/dist/maplibre-gl.css";
-    document.head.appendChild(link);
-  }
-}
+import "maplibre-gl/dist/maplibre-gl.css";
 
 type TimeFilter = "all" | "30m" | "1h" | "2h";
 
@@ -56,6 +46,14 @@ const SOURCE_ID = "sightings-source";
 const LAYER_CLUSTERS = "clusters";
 const LAYER_CLUSTER_COUNT = "cluster-count";
 const LAYER_UNCLUSTERED = "unclustered-point";
+const LAYER_TIME_LABEL = "time-label";
+
+function timeLabel(dateStr: string): string {
+  const mins = Math.floor((Date.now() - new Date(dateStr).getTime()) / 60000);
+  if (mins < 1) return "now";
+  if (mins < 60) return `${mins}m`;
+  return `${Math.floor(mins / 60)}h`;
+}
 
 export default function Map() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -100,6 +98,7 @@ export default function Map() {
           description: s.description,
           image_path: s.image_path,
           created_at: s.created_at,
+          time_label: timeLabel(s.created_at),
         },
       })),
     };
@@ -192,6 +191,27 @@ export default function Map() {
         },
       });
 
+      // Time labels below individual dots
+      map.addLayer({
+        id: LAYER_TIME_LABEL,
+        type: "symbol",
+        source: SOURCE_ID,
+        filter: ["!", ["has", "point_count"]],
+        layout: {
+          "text-field": ["get", "time_label"],
+          "text-size": 10,
+          "text-font": ["Open Sans Bold"],
+          "text-offset": [0, 1.4],
+          "text-anchor": "top",
+          "text-allow-overlap": true,
+        },
+        paint: {
+          "text-color": "rgba(255,255,255,0.85)",
+          "text-halo-color": "rgba(0,0,0,0.8)",
+          "text-halo-width": 1,
+        },
+      });
+
       // Click cluster → zoom in
       map.on("click", LAYER_CLUSTERS, (e) => {
         const features = map.queryRenderedFeatures(e.point, { layers: [LAYER_CLUSTERS] });
@@ -229,7 +249,7 @@ export default function Map() {
           return `<div style="color:#000;font-size:14px">
             <strong>${currentT.iceSighting}</strong>
             ${desc ? `<p style="margin:4px 0 0">${desc}</p>` : ""}
-            ${imgSrc ? `<img src="${escapeHtml(imgSrc)}" style="margin:6px 0 2px;border-radius:8px;max-width:200px;max-height:150px;object-fit:cover" />` : ""}
+            ${imgSrc ? `<img src="${escapeHtml(imgSrc)}" loading="lazy" style="margin:6px 0 2px;border-radius:8px;max-width:200px;max-height:150px;object-fit:cover" />` : ""}
             <p style="margin:4px 0 0;font-size:12px;color:#666">
               ${relativeTime(props.created_at, currentT)}
             </p>
@@ -287,12 +307,16 @@ export default function Map() {
       { enableHighAccuracy: true }
     );
 
+    // Refresh time labels every 60s
+    const labelInterval = setInterval(() => updateSource(), 60000);
+
     const goOffline = () => setOffline(true);
     const goOnline = () => setOffline(false);
     window.addEventListener("offline", goOffline);
     window.addEventListener("online", goOnline);
 
     return () => {
+      clearInterval(labelInterval);
       sourceReadyRef.current = false;
       map.remove();
       mapRef.current = null;
@@ -307,10 +331,6 @@ export default function Map() {
     updateSource();
   }, [timeFilter, updateSource]);
 
-  // Update source when language changes (for count display)
-  useEffect(() => {
-    updateSource();
-  }, [t, updateSource]);
 
   // Load sightings and subscribe to realtime
   useEffect(() => {
@@ -318,7 +338,8 @@ export default function Map() {
       const { data } = await supabase
         .from("sightings_view")
         .select("*")
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: false })
+        .limit(500);
 
       if (data) {
         sightingsRef.current = data as SightingView[];

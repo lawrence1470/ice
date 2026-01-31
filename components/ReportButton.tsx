@@ -85,7 +85,7 @@ export default function ReportButton() {
           .from("sighting-images")
           .upload(fileName, compressed, {
             contentType: "image/webp",
-            cacheControl: "3600",
+            cacheControl: "31536000, immutable",
           });
 
         if (uploadError) throw uploadError;
