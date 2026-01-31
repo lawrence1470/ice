@@ -12,6 +12,7 @@ export default function Header() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [featuresOpen, setFeaturesOpen] = useState(false);
+  const [pwaInfoOpen, setPwaInfoOpen] = useState(false);
   const [deferredPrompt, setDeferredPrompt] =
     useState<BeforeInstallPromptEvent | null>(null);
   const [isInstalled, setIsInstalled] = useState(false);
@@ -45,7 +46,7 @@ export default function Header() {
 
   return (
     <>
-    <header className="absolute top-0 left-0 right-0 z-50">
+    <header className="absolute top-0 left-0 right-0 z-[1001]">
       <div className="flex items-center justify-between px-4 py-3 bg-black/70 backdrop-blur-md">
         <div className="flex items-center gap-2">
           <span className="text-red-500 text-xl">🚨</span>
@@ -104,8 +105,13 @@ export default function Header() {
                 onClick={handleInstall}
                 className={`w-full text-left px-5 py-3.5 text-white/90 hover:bg-white/10 active:bg-white/15 cursor-pointer transition-all duration-300 flex items-center gap-2 ${menuOpen ? "translate-y-0 opacity-100 delay-100" : "-translate-y-2 opacity-0"}`}
               >
-                <span>📲</span>
                 <span>{t.downloadPwa}</span>
+                <span
+                  onClick={(e) => { e.stopPropagation(); setPwaInfoOpen(true); setMenuOpen(false); }}
+                  className="ml-auto w-5 h-5 rounded-full border border-white/30 flex items-center justify-center text-[11px] text-white/50 hover:text-white hover:border-white/60 transition-colors"
+                >
+                  i
+                </span>
               </button>
             </li>
           )}
@@ -163,6 +169,30 @@ export default function Header() {
               </div>
             ))}
           </div>
+        </div>
+      </div>
+    )}
+
+    {/* PWA info modal */}
+    {pwaInfoOpen && (
+      <div
+        className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+        onClick={() => setPwaInfoOpen(false)}
+      >
+        <div
+          className="bg-zinc-900 border border-white/10 rounded-2xl max-w-sm w-full p-6 animate-[fadeUp_0.25s_ease-out]"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold text-white">{t.downloadPwa}</h2>
+            <button
+              onClick={() => setPwaInfoOpen(false)}
+              className="text-white/50 hover:text-white text-2xl leading-none cursor-pointer"
+            >
+              ×
+            </button>
+          </div>
+          <p className="text-white/80 text-sm leading-relaxed">{t.pwaInfo}</p>
         </div>
       </div>
     )}

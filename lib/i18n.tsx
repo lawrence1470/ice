@@ -7,7 +7,8 @@ export type Locale = "en" | "es";
 const translations = {
   en: {
     map: "Map",
-    downloadPwa: "Download as PWA",
+    downloadPwa: "Install App",
+    pwaInfo: "Install ICE Alert on your home screen for quick one-tap access — no app store needed. Stay ready to report and receive alerts instantly.",
     about: "About",
     aboutTitle: "About",
     aboutP1:
@@ -60,7 +61,8 @@ const translations = {
   },
   es: {
     map: "Mapa",
-    downloadPwa: "Descargar como App",
+    downloadPwa: "Instalar App",
+    pwaInfo: "Instala ICE Alert en tu pantalla de inicio para acceso rápido con un toque — sin tienda de apps. Mantente listo para reportar y recibir alertas al instante.",
     about: "Acerca de",
     aboutTitle: "Acerca de",
     aboutP1:
