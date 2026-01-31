@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { useI18n } from "@/lib/i18n";
+import { compressImage } from "@/lib/image";
 
-
-const RATE_LIMIT_MS = 5 * 60 * 1000; // 5 minutes
+const RATE_LIMIT_MS = 5 * 60 * 1000;
 const STORAGE_KEY = "ice-alert-last-report";
 
 function canReport(): boolean {
@@ -25,10 +25,35 @@ function remainingCooldown(): number {
 export default function ReportButton() {
   const [open, setOpen] = useState(false);
   const [description, setDescription] = useState("");
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { t } = useI18n();
+
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 10 * 1024 * 1024) {
+      setError(t.imageTooLarge);
+      return;
+    }
+
+    setImageFile(file);
+    const url = URL.createObjectURL(file);
+    setImagePreview(url);
+    setError(null);
+  };
+
+  const removeImage = () => {
+    setImageFile(null);
+    if (imagePreview) URL.revokeObjectURL(imagePreview);
+    setImagePreview(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
 
   const handleSubmit = useCallback(async () => {
     setError(null);
@@ -49,10 +74,29 @@ export default function ReportButton() {
         })
       );
 
+      let imagePath: string | null = null;
+
+      // Upload image first if present
+      if (imageFile) {
+        const compressed = await compressImage(imageFile);
+        const fileName = `${crypto.randomUUID()}.webp`;
+
+        const { error: uploadError } = await supabase.storage
+          .from("sighting-images")
+          .upload(fileName, compressed, {
+            contentType: "image/webp",
+            cacheControl: "3600",
+          });
+
+        if (uploadError) throw uploadError;
+        imagePath = fileName;
+      }
+
       const { error: dbError } = await supabase.rpc("insert_sighting", {
         lng: pos.coords.longitude,
         lat: pos.coords.latitude,
         description: description.trim().slice(0, 280) || null,
+        image_path: imagePath,
       });
 
       if (dbError) throw dbError;
@@ -60,6 +104,7 @@ export default function ReportButton() {
       localStorage.setItem(STORAGE_KEY, Date.now().toString());
       setSuccess(true);
       setDescription("");
+      removeImage();
       setTimeout(() => {
         setSuccess(false);
         setOpen(false);
@@ -76,7 +121,7 @@ export default function ReportButton() {
     } finally {
       setSubmitting(false);
     }
-  }, [description, t]);
+  }, [description, imageFile, t]);
 
   if (!open) {
     return (
@@ -106,6 +151,41 @@ export default function ReportButton() {
         <p className={`text-xs text-right mb-3 ${description.length >= 260 ? "text-red-400" : "text-zinc-500"}`}>
           {description.length}/280
         </p>
+
+        {/* Image upload */}
+        <div className="mb-4">
+          {imagePreview ? (
+            <div className="relative inline-block">
+              <img
+                src={imagePreview}
+                alt="Preview"
+                className="w-full max-h-40 object-cover rounded-lg border border-zinc-700"
+              />
+              <button
+                onClick={removeImage}
+                className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/70 text-white text-xs flex items-center justify-center hover:bg-black/90 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="w-full rounded-lg border border-dashed border-zinc-700 px-4 py-3 text-zinc-500 text-sm hover:border-zinc-500 hover:text-zinc-400 transition-colors cursor-pointer flex items-center justify-center gap-2"
+            >
+              <span>📷</span>
+              <span>{t.addPhoto}</span>
+            </button>
+          )}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            onChange={handleImageSelect}
+            className="hidden"
+          />
+        </div>
 
         {error && <p className="text-red-400 text-sm mb-3">{error}</p>}
         {success && <p className="text-green-400 text-sm mb-3">{t.reportSuccess}</p>}

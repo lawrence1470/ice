@@ -14,6 +14,7 @@ export interface Database {
           id: string;
           location: string;
           description: string | null;
+          image_path: string | null;
           created_at: string;
           expires_at: string;
         };
@@ -21,6 +22,7 @@ export interface Database {
           id?: string;
           location: string;
           description?: string | null;
+          image_path?: string | null;
           created_at?: string;
           expires_at?: string;
         };
@@ -28,6 +30,7 @@ export interface Database {
           id?: string;
           location?: string;
           description?: string | null;
+          image_path?: string | null;
           created_at?: string;
           expires_at?: string;
         };
@@ -55,11 +58,12 @@ export interface Database {
     Views: Record<string, never>;
     Functions: {
       insert_sighting: {
-        Args: { lng: number; lat: number; description?: string | null };
+        Args: { lng: number; lat: number; description?: string | null; image_path?: string | null };
         Returns: {
           id: string;
           location: string;
           description: string | null;
+          image_path: string | null;
           created_at: string;
           expires_at: string;
         };

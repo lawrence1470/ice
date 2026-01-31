@@ -11,6 +11,7 @@ interface BeforeInstallPromptEvent extends Event {
 export default function Header() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [featuresOpen, setFeaturesOpen] = useState(false);
   const [deferredPrompt, setDeferredPrompt] =
     useState<BeforeInstallPromptEvent | null>(null);
   const [isInstalled, setIsInstalled] = useState(false);
@@ -110,6 +111,14 @@ export default function Header() {
           )}
           <li>
             <button
+              onClick={() => { setMenuOpen(false); setFeaturesOpen(true); }}
+              className={`w-full text-left px-5 py-3.5 text-white/90 hover:bg-white/10 active:bg-white/15 cursor-pointer transition-all duration-300 ${menuOpen ? "translate-y-0 opacity-100 delay-125" : "-translate-y-2 opacity-0"}`}
+            >
+              {t.howItWorks}
+            </button>
+          </li>
+          <li>
+            <button
               onClick={() => { setMenuOpen(false); setAboutOpen(true); }}
               className={`w-full text-left px-5 py-3.5 text-white/90 hover:bg-white/10 active:bg-white/15 cursor-pointer transition-all duration-300 ${menuOpen ? "translate-y-0 opacity-100 delay-150" : "-translate-y-2 opacity-0"}`}
             >
@@ -125,6 +134,38 @@ export default function Header() {
         onClick={() => setMenuOpen(false)}
       />
     </header>
+
+    {/* How It Works modal */}
+    {featuresOpen && (
+      <div
+        className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+        onClick={() => setFeaturesOpen(false)}
+      >
+        <div
+          className="bg-zinc-900 border border-white/10 rounded-2xl max-w-sm w-full p-6 max-h-[80vh] overflow-y-auto animate-[fadeUp_0.25s_ease-out]"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold text-white">{t.howItWorks}</h2>
+            <button
+              onClick={() => setFeaturesOpen(false)}
+              className="text-white/50 hover:text-white text-2xl leading-none cursor-pointer"
+            >
+              ×
+            </button>
+          </div>
+
+          <div className="space-y-3">
+            {t.features.map((feature, i) => (
+              <div key={i}>
+                <h3 className="text-white font-medium text-sm">{feature.title}</h3>
+                <p className="text-white/50 text-xs leading-relaxed mt-0.5">{feature.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    )}
 
     {/* About modal */}
     {aboutOpen && (

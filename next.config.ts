@@ -12,7 +12,7 @@ const nextConfig: NextConfig = {
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           {
             key: "Permissions-Policy",
-            value: "geolocation=(self), camera=(), microphone=()",
+            value: "geolocation=(self), camera=(self), microphone=()",
           },
           {
             key: "Content-Security-Policy",
@@ -20,8 +20,8 @@ const nextConfig: NextConfig = {
               "default-src 'self'",
               "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
               "style-src 'self' 'unsafe-inline' https://unpkg.com",
-              "img-src 'self' data: blob: https://*.stadiamaps.com https://*.stamen.com https://tiles.stadiamaps.com",
-              "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://tiles.stadiamaps.com https://*.stadiamaps.com https://api.mymemory.translated.net",
+              "img-src 'self' data: blob: https://*.cartocdn.com https://*.basemaps.cartocdn.com https://*.supabase.co",
+              "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://basemaps.cartocdn.com https://*.basemaps.cartocdn.com https://api.mymemory.translated.net",
               "font-src 'self'",
               "worker-src 'self' blob:",
               "child-src 'self' blob:",

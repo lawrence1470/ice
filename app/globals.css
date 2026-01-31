@@ -8,14 +8,14 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-inter);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-inter), sans-serif;
   margin: 0;
   overflow: hidden;
 }
@@ -36,72 +36,6 @@ body {
   box-shadow: 0 0 0 4px rgba(250, 250, 250, 0.15), 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
-/* Sighting marker */
-.sighting-marker {
-  width: 12px;
-  height: 12px;
-  background: #ef4444;
-  border: 1.5px solid rgba(255, 255, 255, 0.8);
-  border-radius: 50%;
-  cursor: pointer;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
-}
-
-.sighting-marker:hover {
-  transform: scale(1.3);
-  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.5);
-}
-
-/* Cluster marker */
-.sighting-cluster {
-  min-width: 28px;
-  height: 28px;
-  background: #ef4444;
-  border: 1.5px solid rgba(255, 255, 255, 0.8);
-  border-radius: 14px;
-  cursor: pointer;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  font-weight: 600;
-  color: #fff;
-  padding: 0 6px;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
-}
-
-.sighting-cluster:hover {
-  transform: scale(1.15);
-  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.5);
-}
-
-/* Ripple animation for new sightings */
-.sighting-new {
-  position: relative;
-}
-
-.sighting-new::after {
-  content: "";
-  position: absolute;
-  inset: -4px;
-  border: 2px solid #ef4444;
-  border-radius: 50%;
-  animation: ripple 1.5s ease-out forwards;
-}
-
-@keyframes ripple {
-  0% {
-    transform: scale(1);
-    opacity: 0.8;
-  }
-  100% {
-    transform: scale(3);
-    opacity: 0;
-  }
-}
-
 @keyframes fadeUp {
   from {
     opacity: 0;
@@ -111,25 +45,6 @@ body {
     opacity: 1;
     transform: translateY(0) scale(1);
   }
-}
-
-/* Dot wrapper for single sightings (dot + time label) */
-.sighting-dot-wrapper {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  cursor: pointer;
-}
-
-/* Time label below dot */
-.sighting-time-label {
-  margin-top: 2px;
-  font-size: 10px;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.85);
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
-  white-space: nowrap;
-  pointer-events: none;
 }
 
 /* Time filter bar */

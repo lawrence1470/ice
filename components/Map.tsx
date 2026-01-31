@@ -10,6 +10,7 @@ interface SightingView {
   lng: number;
   lat: number;
   description: string | null;
+  image_path: string | null;
   created_at: string;
   expires_at: string;
 }
@@ -24,49 +25,6 @@ if (typeof document !== "undefined") {
     link.href = "https://unpkg.com/maplibre-gl@5.17.0/dist/maplibre-gl.css";
     document.head.appendChild(link);
   }
-}
-
-// Cluster using pixel distance on screen — 60px threshold
-const CLUSTER_PX = 60;
-
-interface Cluster {
-  lng: number;
-  lat: number;
-  sightings: SightingView[];
-}
-
-function clusterSightings(sightings: SightingView[], map: maplibregl.Map): Cluster[] {
-  const clusters: Cluster[] = [];
-  const assigned = new Set<string>();
-
-  // Project all sightings to screen pixels
-  const projected = sightings.map((s) => ({
-    s,
-    px: map.project([s.lng, s.lat]),
-  }));
-
-  for (const { s, px } of projected) {
-    if (assigned.has(s.id)) continue;
-
-    const nearby: SightingView[] = [];
-    for (const other of projected) {
-      if (assigned.has(other.s.id)) continue;
-      const dx = other.px.x - px.x;
-      const dy = other.px.y - px.y;
-      if (dx * dx + dy * dy < CLUSTER_PX * CLUSTER_PX) {
-        nearby.push(other.s);
-      }
-    }
-
-    nearby.forEach((n) => assigned.add(n.id));
-
-    const avgLng = nearby.reduce((sum, n) => sum + n.lng, 0) / nearby.length;
-    const avgLat = nearby.reduce((sum, n) => sum + n.lat, 0) / nearby.length;
-
-    clusters.push({ lng: avgLng, lat: avgLat, sightings: nearby });
-  }
-
-  return clusters;
 }
 
 type TimeFilter = "all" | "30m" | "1h" | "2h";
@@ -94,15 +52,14 @@ function escapeHtml(str: string): string {
     .replace(/'/g, "&#39;");
 }
 
-function ageOpacity(dateStr: string): number {
-  const hours = (Date.now() - new Date(dateStr).getTime()) / 3600000;
-  return Math.max(0.4, 1 - hours * 0.1);
-}
+const SOURCE_ID = "sightings-source";
+const LAYER_CLUSTERS = "clusters";
+const LAYER_CLUSTER_COUNT = "cluster-count";
+const LAYER_UNCLUSTERED = "unclustered-point";
 
 export default function Map() {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
-  const markersRef = useRef<maplibregl.Marker[]>([]);
   const sightingsRef = useRef<SightingView[]>([]);
   const [loading, setLoading] = useState(true);
   const [timeFilter, setTimeFilter] = useState<TimeFilter>("all");
@@ -115,112 +72,41 @@ export default function Map() {
   tRef.current = t;
   const localeRef = useRef<Locale>(locale);
   localeRef.current = locale;
+  const sourceReadyRef = useRef(false);
 
-  const renderMarkers = useCallback((newIds?: Set<string>) => {
+  const updateSource = useCallback(() => {
     const map = mapRef.current;
-    if (!map) return;
-    const t = tRef.current;
+    if (!map || !sourceReadyRef.current) return;
+
     const filter = timeFilterRef.current;
-
-    // Remove old markers
-    markersRef.current.forEach((m) => m.remove());
-    markersRef.current = [];
-
-    // Apply time filter
     const now = Date.now();
     const cutoff = FILTER_MS[filter];
-    const filtered = cutoff === Infinity
-      ? sightingsRef.current
-      : sightingsRef.current.filter((s) => now - new Date(s.created_at).getTime() < cutoff);
+    const filtered =
+      cutoff === Infinity
+        ? sightingsRef.current
+        : sightingsRef.current.filter(
+            (s) => now - new Date(s.created_at).getTime() < cutoff
+          );
 
     setFilteredCount(filtered.length);
 
-    const clusters = clusterSightings(filtered, map);
+    const geojson: GeoJSON.FeatureCollection = {
+      type: "FeatureCollection",
+      features: filtered.map((s) => ({
+        type: "Feature" as const,
+        geometry: { type: "Point" as const, coordinates: [s.lng, s.lat] },
+        properties: {
+          id: s.id,
+          description: s.description,
+          image_path: s.image_path,
+          created_at: s.created_at,
+        },
+      })),
+    };
 
-    for (const cluster of clusters) {
-      const count = cluster.sightings.length;
-      const isNew = newIds && cluster.sightings.some((s) => newIds.has(s.id));
-      const latest = cluster.sightings[0];
-
-      const el = document.createElement("div");
-
-      if (count > 1) {
-        el.className = `sighting-cluster${isNew ? " sighting-new" : ""}`;
-        el.textContent = String(count);
-        el.style.opacity = String(ageOpacity(latest.created_at));
-        el.addEventListener("click", (e) => {
-          e.stopPropagation();
-          map.flyTo({ center: [cluster.lng, cluster.lat], zoom: Math.min(map.getZoom() + 3, 18) });
-        });
-      } else {
-        el.className = `sighting-dot-wrapper${isNew ? " sighting-new" : ""}`;
-        el.style.opacity = String(ageOpacity(latest.created_at));
-
-        const dot = document.createElement("div");
-        dot.className = "sighting-marker";
-
-        const label = document.createElement("span");
-        label.className = "sighting-time-label";
-        label.textContent = relativeTime(latest.created_at, t);
-
-        el.appendChild(dot);
-        el.appendChild(label);
-      }
-
-      const currentLocale = localeRef.current;
-
-      const buildPopupHtml = (descriptions: (string | null)[]) => {
-        if (count > 1) {
-          return `<div style="color:#000;font-size:14px">
-            <strong>${t.iceSightings(count)}</strong>
-            <p style="margin:4px 0 0;font-size:12px;color:#666">
-              ${t.latest}: ${new Date(latest.created_at).toLocaleTimeString()}
-            </p>
-            ${descriptions
-              .slice(0, 3)
-              .map((d) => d ? `<p style="margin:4px 0 0;font-size:12px">${d}</p>` : "")
-              .join("")}
-            ${count > 3 ? `<p style="margin:4px 0 0;font-size:11px;color:#999">${t.more(count - 3)}</p>` : ""}
-          </div>`;
-        }
-        return `<div style="color:#000;font-size:14px">
-            <strong>${t.iceSighting}</strong>
-            ${descriptions[0] ? `<p style="margin:4px 0 0">${descriptions[0]}</p>` : ""}
-            <p style="margin:4px 0 0;font-size:12px;color:#666">
-              ${new Date(latest.created_at).toLocaleTimeString()}
-            </p>
-          </div>`;
-      };
-
-      const descriptions = cluster.sightings.map((s) => s.description ? escapeHtml(s.description) : null);
-      const popup = new maplibregl.Popup({ offset: 25 }).setHTML(buildPopupHtml(descriptions));
-
-      const marker = new maplibregl.Marker({ element: el })
-        .setLngLat([cluster.lng, cluster.lat]);
-
-      if (count === 1) {
-        marker.setPopup(popup);
-      }
-
-      // Translate descriptions asynchronously when locale is not English
-      if (currentLocale !== "en") {
-        const textsToTranslate = descriptions.filter((d): d is string => !!d);
-        if (textsToTranslate.length > 0) {
-          Promise.all(
-            textsToTranslate.map((d) => translateText(d, "en", currentLocale))
-          ).then((translated) => {
-            let idx = 0;
-            const translatedDescs = descriptions.map((d) =>
-              d ? translated[idx++] : null
-            );
-            popup.setHTML(buildPopupHtml(translatedDescs));
-          });
-        }
-      }
-
-      marker.addTo(map);
-
-      markersRef.current.push(marker);
+    const source = map.getSource(SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
+    if (source) {
+      source.setData(geojson);
     }
   }, []);
 
@@ -231,12 +117,11 @@ export default function Map() {
     if (mapRef.current) {
       mapRef.current.remove();
       mapRef.current = null;
-      markersRef.current = [];
     }
 
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: "https://tiles.stadiamaps.com/styles/alidade_smooth_dark.json",
+      style: "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
       center: [-98.5795, 39.8283],
       zoom: 4,
     });
@@ -244,8 +129,146 @@ export default function Map() {
     map.addControl(new maplibregl.NavigationControl(), "top-right");
     mapRef.current = map;
 
-    map.on("load", () => setLoading(false));
-    map.on("moveend", () => renderMarkers());
+    map.on("load", () => {
+      setLoading(false);
+      sourceReadyRef.current = true;
+
+      map.addSource(SOURCE_ID, {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+        cluster: true,
+        clusterMaxZoom: 14,
+        clusterRadius: 50,
+      });
+
+      // Cluster circles
+      map.addLayer({
+        id: LAYER_CLUSTERS,
+        type: "circle",
+        source: SOURCE_ID,
+        filter: ["has", "point_count"],
+        paint: {
+          "circle-color": "#ef4444",
+          "circle-radius": [
+            "step",
+            ["get", "point_count"],
+            15, // default
+            5, 18,
+            10, 22,
+            25, 26,
+          ],
+          "circle-stroke-width": 1.5,
+          "circle-stroke-color": "rgba(255,255,255,0.8)",
+        },
+      });
+
+      // Cluster count labels
+      map.addLayer({
+        id: LAYER_CLUSTER_COUNT,
+        type: "symbol",
+        source: SOURCE_ID,
+        filter: ["has", "point_count"],
+        layout: {
+          "text-field": "{point_count_abbreviated}",
+          "text-size": 12,
+          "text-font": ["Open Sans Bold"],
+        },
+        paint: {
+          "text-color": "#ffffff",
+        },
+      });
+
+      // Individual sighting dots
+      map.addLayer({
+        id: LAYER_UNCLUSTERED,
+        type: "circle",
+        source: SOURCE_ID,
+        filter: ["!", ["has", "point_count"]],
+        paint: {
+          "circle-color": "#ef4444",
+          "circle-radius": 6,
+          "circle-stroke-width": 1.5,
+          "circle-stroke-color": "rgba(255,255,255,0.8)",
+        },
+      });
+
+      // Click cluster → zoom in
+      map.on("click", LAYER_CLUSTERS, (e) => {
+        const features = map.queryRenderedFeatures(e.point, { layers: [LAYER_CLUSTERS] });
+        if (!features.length) return;
+        const clusterId = features[0].properties.cluster_id;
+        const source = map.getSource(SOURCE_ID) as maplibregl.GeoJSONSource;
+        source.getClusterExpansionZoom(clusterId).then((zoom) => {
+          const geom = features[0].geometry as GeoJSON.Point;
+          map.easeTo({
+            center: geom.coordinates as [number, number],
+            zoom,
+          });
+        });
+      });
+
+      // Click individual point → popup
+      map.on("click", LAYER_UNCLUSTERED, (e) => {
+        const features = map.queryRenderedFeatures(e.point, { layers: [LAYER_UNCLUSTERED] });
+        if (!features.length) return;
+        const feat = features[0];
+        const geom = feat.geometry as GeoJSON.Point;
+        const coords = geom.coordinates.slice() as [number, number];
+        const props = feat.properties;
+        const currentT = tRef.current;
+        const currentLocale = localeRef.current;
+
+        const imageUrl = (path: string | null) => {
+          if (!path) return null;
+          const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+          return `${url}/storage/v1/object/public/sighting-images/${path}`;
+        };
+
+        const buildPopupHtml = (desc: string | null) => {
+          const imgSrc = imageUrl(props.image_path);
+          return `<div style="color:#000;font-size:14px">
+            <strong>${currentT.iceSighting}</strong>
+            ${desc ? `<p style="margin:4px 0 0">${desc}</p>` : ""}
+            ${imgSrc ? `<img src="${escapeHtml(imgSrc)}" style="margin:6px 0 2px;border-radius:8px;max-width:200px;max-height:150px;object-fit:cover" />` : ""}
+            <p style="margin:4px 0 0;font-size:12px;color:#666">
+              ${relativeTime(props.created_at, currentT)}
+            </p>
+          </div>`;
+        };
+
+        const rawDesc = props.description
+          ? escapeHtml(props.description)
+          : null;
+
+        const popup = new maplibregl.Popup({ offset: 15 })
+          .setLngLat(coords)
+          .setHTML(buildPopupHtml(rawDesc))
+          .addTo(map);
+
+        if (currentLocale !== "en" && rawDesc) {
+          translateText(rawDesc, "en", currentLocale).then((translated) => {
+            popup.setHTML(buildPopupHtml(translated));
+          });
+        }
+      });
+
+      // Cursor changes
+      map.on("mouseenter", LAYER_CLUSTERS, () => {
+        map.getCanvas().style.cursor = "pointer";
+      });
+      map.on("mouseleave", LAYER_CLUSTERS, () => {
+        map.getCanvas().style.cursor = "";
+      });
+      map.on("mouseenter", LAYER_UNCLUSTERED, () => {
+        map.getCanvas().style.cursor = "pointer";
+      });
+      map.on("mouseleave", LAYER_UNCLUSTERED, () => {
+        map.getCanvas().style.cursor = "";
+      });
+
+      // Render any sightings that loaded before map was ready
+      updateSource();
+    });
 
     navigator.geolocation.getCurrentPosition(
       (pos) => {
@@ -270,24 +293,24 @@ export default function Map() {
     window.addEventListener("online", goOnline);
 
     return () => {
+      sourceReadyRef.current = false;
       map.remove();
       mapRef.current = null;
-      markersRef.current = [];
       window.removeEventListener("offline", goOffline);
       window.removeEventListener("online", goOnline);
     };
   }, []);
 
-  // Sync filter ref and re-render
+  // Sync filter ref and update source
   useEffect(() => {
     timeFilterRef.current = timeFilter;
-    renderMarkers();
-  }, [timeFilter, renderMarkers]);
+    updateSource();
+  }, [timeFilter, updateSource]);
 
-  // Re-render markers when language changes
+  // Update source when language changes (for count display)
   useEffect(() => {
-    renderMarkers();
-  }, [t, renderMarkers]);
+    updateSource();
+  }, [t, updateSource]);
 
   // Load sightings and subscribe to realtime
   useEffect(() => {
@@ -299,7 +322,7 @@ export default function Map() {
 
       if (data) {
         sightingsRef.current = data as SightingView[];
-        renderMarkers();
+        updateSource();
       }
     }
 
@@ -320,7 +343,7 @@ export default function Map() {
           const latest = (data as SightingView[] | null)?.[0];
           if (latest && !sightingsRef.current.find((s) => s.id === latest.id)) {
             sightingsRef.current = [latest, ...sightingsRef.current];
-            renderMarkers(new Set([latest.id]));
+            updateSource();
           }
         }
       )
@@ -329,7 +352,7 @@ export default function Map() {
     return () => {
       channel.unsubscribe();
     };
-  }, [renderMarkers]);
+  }, [updateSource]);
 
   const filters: TimeFilter[] = ["all", "30m", "1h", "2h"];
   const filterLabels: Record<TimeFilter, string> = {
