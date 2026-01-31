@@ -52,7 +52,7 @@ export default function ReportButton() {
       const { error: dbError } = await supabase.rpc("insert_sighting", {
         lng: pos.coords.longitude,
         lat: pos.coords.latitude,
-        description: description.trim() || null,
+        description: description.trim().slice(0, 280) || null,
       });
 
       if (dbError) throw dbError;
@@ -100,8 +100,12 @@ export default function ReportButton() {
           onChange={(e) => setDescription(e.target.value)}
           placeholder={t.reportPlaceholder}
           rows={3}
-          className="w-full rounded-lg bg-zinc-800 border border-zinc-700 text-white p-3 text-sm placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-red-500 mb-4 resize-none"
+          maxLength={280}
+          className="w-full rounded-lg bg-zinc-800 border border-zinc-700 text-white p-3 text-sm placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-red-500 mb-1 resize-none"
         />
+        <p className={`text-xs text-right mb-3 ${description.length >= 260 ? "text-red-400" : "text-zinc-500"}`}>
+          {description.length}/280
+        </p>
 
         {error && <p className="text-red-400 text-sm mb-3">{error}</p>}
         {success && <p className="text-green-400 text-sm mb-3">{t.reportSuccess}</p>}

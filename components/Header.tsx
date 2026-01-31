@@ -149,18 +149,9 @@ export default function Header() {
           <p className="text-white/80 text-sm leading-relaxed mb-3">
             {t.aboutP1}
           </p>
-          <p className="text-white/80 text-sm leading-relaxed mb-4">
+          <p className="text-white/80 text-sm leading-relaxed">
             {t.aboutP2}
           </p>
-
-          <a
-            href="https://www.iceinmyarea.org/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-block text-sm text-red-400 hover:text-red-300 underline underline-offset-2 cursor-pointer"
-          >
-            {t.learnMore}
-          </a>
         </div>
       </div>
     )}

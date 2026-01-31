@@ -5,7 +5,7 @@ import { createClient } from "@supabase/supabase-js";
 function getSupabase() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   );
 }
 
@@ -18,9 +18,21 @@ function initWebPush() {
 }
 
 export async function POST(request: Request) {
+  // Auth: require a secret token for push broadcasts
+  const authHeader = request.headers.get("authorization");
+  const expected = process.env.PUSH_SECRET;
+  if (!expected || authHeader !== `Bearer ${expected}`) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
     initWebPush();
     const { title, body } = await request.json();
+
+    // Validate input
+    const safeTitle = typeof title === "string" ? title.slice(0, 100) : "ICE Alert";
+    const safeBody = typeof body === "string" ? body.slice(0, 500) : "New ICE sighting reported nearby";
+
     const supabase = getSupabase();
 
     const { data: subscriptions } = await supabase
@@ -32,8 +44,8 @@ export async function POST(request: Request) {
     }
 
     const payload = JSON.stringify({
-      title: title || "ICE Alert",
-      body: body || "New ICE sighting reported nearby",
+      title: safeTitle,
+      body: safeBody,
     });
 
     const results = await Promise.allSettled(

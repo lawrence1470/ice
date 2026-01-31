@@ -85,6 +85,15 @@ function relativeTime(dateStr: string, t: ReturnType<typeof useI18n>["t"]): stri
   return t.hoursAgo(Math.floor(mins / 60));
 }
 
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function ageOpacity(dateStr: string): number {
   const hours = (Date.now() - new Date(dateStr).getTime()) / 3600000;
   return Math.max(0.4, 1 - hours * 0.1);
@@ -98,6 +107,9 @@ export default function Map() {
   const [loading, setLoading] = useState(true);
   const [timeFilter, setTimeFilter] = useState<TimeFilter>("all");
   const timeFilterRef = useRef<TimeFilter>("all");
+  const [filteredCount, setFilteredCount] = useState<number | null>(null);
+  const [locationDenied, setLocationDenied] = useState(false);
+  const [offline, setOffline] = useState(!navigator.onLine);
   const { t, locale } = useI18n();
   const tRef = useRef(t);
   tRef.current = t;
@@ -120,6 +132,8 @@ export default function Map() {
     const filtered = cutoff === Infinity
       ? sightingsRef.current
       : sightingsRef.current.filter((s) => now - new Date(s.created_at).getTime() < cutoff);
+
+    setFilteredCount(filtered.length);
 
     const clusters = clusterSightings(filtered, map);
 
@@ -178,7 +192,7 @@ export default function Map() {
           </div>`;
       };
 
-      const descriptions = cluster.sightings.map((s) => s.description);
+      const descriptions = cluster.sightings.map((s) => s.description ? escapeHtml(s.description) : null);
       const popup = new maplibregl.Popup({ offset: 25 }).setHTML(buildPopupHtml(descriptions));
 
       const marker = new maplibregl.Marker({ element: el })
@@ -244,14 +258,23 @@ export default function Map() {
           .setLngLat(coords)
           .addTo(map);
       },
-      () => {},
+      (err) => {
+        if (err.code === err.PERMISSION_DENIED) setLocationDenied(true);
+      },
       { enableHighAccuracy: true }
     );
+
+    const goOffline = () => setOffline(true);
+    const goOnline = () => setOffline(false);
+    window.addEventListener("offline", goOffline);
+    window.addEventListener("online", goOnline);
 
     return () => {
       map.remove();
       mapRef.current = null;
       markersRef.current = [];
+      window.removeEventListener("offline", goOffline);
+      window.removeEventListener("online", goOnline);
     };
   }, []);
 
@@ -321,7 +344,7 @@ export default function Map() {
       <div
         ref={containerRef}
         className={loading ? "map-loading" : "map-loaded"}
-        style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
+        style={{ position: "absolute", top: 48, left: 0, right: 0, bottom: 0 }}
       />
       {!loading && (
         <div className="time-filter-bar">
@@ -335,6 +358,17 @@ export default function Map() {
             </button>
           ))}
         </div>
+      )}
+      {!loading && filteredCount === 0 && (
+        <div className="empty-state">
+          {timeFilter === "all" ? t.noSightings : t.noSightingsFilter}
+        </div>
+      )}
+      {locationDenied && (
+        <div className="toast-banner toast-warning">{t.locationDenied}</div>
+      )}
+      {offline && (
+        <div className="toast-banner toast-offline">{t.offline}</div>
       )}
     </>
   );
