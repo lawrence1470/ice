@@ -138,6 +138,12 @@ export default function ReportButton() {
     <div className="fixed inset-0 z-50 flex items-end justify-center p-4 sm:items-center">
       <div className="absolute inset-0 bg-black/60" onClick={() => setOpen(false)} />
       <div className="relative w-full max-w-sm rounded-2xl bg-zinc-900 p-6 shadow-xl">
+        {submitting && (
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-2xl bg-zinc-900/95 backdrop-blur-sm">
+            <div className="h-8 w-8 rounded-full border-2 border-zinc-600 border-t-red-500 animate-spin" />
+            <p className="mt-3 text-sm text-zinc-300">{t.uploading}</p>
+          </div>
+        )}
         <h2 className="text-xl font-bold text-white mb-4">{t.reportTitle}</h2>
 
         <textarea

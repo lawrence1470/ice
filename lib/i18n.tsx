@@ -23,6 +23,7 @@ const translations = {
     cancel: "Cancel",
     submit: "Submit",
     submitting: "Submitting...",
+    uploading: "Uploading...",
     reportSuccess: "Report submitted!",
     locationRequired: "Location access is required to report a sighting.",
     reportFailed: "Failed to submit report. Please try again.",
@@ -77,6 +78,7 @@ const translations = {
     cancel: "Cancelar",
     submit: "Enviar",
     submitting: "Enviando...",
+    uploading: "Subiendo...",
     reportSuccess: "¡Reporte enviado!",
     locationRequired:
       "Se requiere acceso a la ubicación para reportar un avistamiento.",
