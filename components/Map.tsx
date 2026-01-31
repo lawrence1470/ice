@@ -13,11 +13,19 @@ interface SightingView {
   expires_at: string;
 }
 
-interface MapProps {
-  onMapReady?: (map: maplibregl.Map) => void;
+// Inject MapLibre CSS once via <link> tag
+if (typeof document !== "undefined") {
+  const id = "maplibre-css";
+  if (!document.getElementById(id)) {
+    const link = document.createElement("link");
+    link.id = id;
+    link.rel = "stylesheet";
+    link.href = "https://unpkg.com/maplibre-gl@5.17.0/dist/maplibre-gl.css";
+    document.head.appendChild(link);
+  }
 }
 
-export default function Map({ onMapReady }: MapProps) {
+export default function Map() {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const markersRef = useRef<Record<string, maplibregl.Marker>>({});
@@ -50,38 +58,24 @@ export default function Map({ onMapReady }: MapProps) {
 
   // Initialize map
   useEffect(() => {
-    if (!containerRef.current || mapRef.current) return;
+    if (!containerRef.current) return;
+
+    // Prevent double-init
+    if (mapRef.current) {
+      mapRef.current.remove();
+      mapRef.current = null;
+      markersRef.current = {};
+    }
 
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: {
-        version: 8,
-        sources: {
-          osm: {
-            type: "raster",
-            tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
-            tileSize: 256,
-            attribution: "&copy; OpenStreetMap contributors",
-          },
-        },
-        layers: [
-          {
-            id: "osm",
-            type: "raster",
-            source: "osm",
-          },
-        ],
-      },
+      style: "https://tiles.stadiamaps.com/styles/alidade_smooth_dark.json",
       center: [-98.5795, 39.8283],
       zoom: 4,
     });
 
     map.addControl(new maplibregl.NavigationControl(), "top-right");
     mapRef.current = map;
-
-    map.on("load", () => {
-      onMapReady?.(map);
-    });
 
     navigator.geolocation.getCurrentPosition(
       (pos) => {
@@ -102,12 +96,10 @@ export default function Map({ onMapReady }: MapProps) {
       mapRef.current = null;
       markersRef.current = {};
     };
-  }, [onMapReady]);
+  }, []);
 
-  // Load existing sightings from view and subscribe to realtime
+  // Load sightings and subscribe to realtime
   useEffect(() => {
-    let channel: ReturnType<typeof supabase.channel> | null = null;
-
     async function loadSightings() {
       const { data, error } = await supabase
         .from("sightings_view")
@@ -120,8 +112,7 @@ export default function Map({ onMapReady }: MapProps) {
 
     loadSightings();
 
-    // Realtime still fires on the sightings table — refetch from view on INSERT
-    channel = supabase
+    const channel = supabase
       .channel("sightings-realtime")
       .on(
         "postgres_changes",
@@ -140,29 +131,9 @@ export default function Map({ onMapReady }: MapProps) {
       .subscribe();
 
     return () => {
-      channel?.unsubscribe();
+      channel.unsubscribe();
     };
   }, [addSightingMarker]);
 
-  return (
-    <>
-      <div ref={containerRef} className="absolute inset-0" />
-      <style jsx global>{`
-        .sighting-marker {
-          width: 20px;
-          height: 20px;
-          background: #dc2626;
-          border: 2px solid #fff;
-          border-radius: 50%;
-          cursor: pointer;
-          box-shadow: 0 0 8px rgba(220, 38, 38, 0.6);
-          animation: pulse 2s infinite;
-        }
-        @keyframes pulse {
-          0%, 100% { box-shadow: 0 0 8px rgba(220, 38, 38, 0.6); }
-          50% { box-shadow: 0 0 16px rgba(220, 38, 38, 0.9); }
-        }
-      `}</style>
-    </>
-  );
+  return <div ref={containerRef} style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} />;
 }

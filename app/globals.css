@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@import "maplibre-gl/dist/maplibre-gl.css";
 
 :root {
   --background: #0a0a0a;
@@ -25,4 +24,20 @@ body {
 .maplibregl-popup-content {
   border-radius: 12px !important;
   padding: 12px !important;
+}
+
+.sighting-marker {
+  width: 20px;
+  height: 20px;
+  background: #dc2626;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 0 8px rgba(220, 38, 38, 0.6);
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 8px rgba(220, 38, 38, 0.6); }
+  50% { box-shadow: 0 0 16px rgba(220, 38, 38, 0.9); }
 }
