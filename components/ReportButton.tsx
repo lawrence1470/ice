@@ -173,7 +173,6 @@ export default function ReportButton() {
               onClick={() => fileInputRef.current?.click()}
               className="w-full rounded-lg border border-dashed border-zinc-700 px-4 py-3 text-zinc-500 text-sm hover:border-zinc-500 hover:text-zinc-400 transition-colors cursor-pointer flex items-center justify-center gap-2"
             >
-              <span>📷</span>
               <span>{t.addPhoto}</span>
             </button>
           )}
