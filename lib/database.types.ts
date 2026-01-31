@@ -54,6 +54,16 @@ export interface Database {
     };
     Views: Record<string, never>;
     Functions: {
+      insert_sighting: {
+        Args: { lng: number; lat: number; description?: string | null };
+        Returns: {
+          id: string;
+          location: string;
+          description: string | null;
+          created_at: string;
+          expires_at: string;
+        };
+      };
       sightings_within_radius: {
         Args: { lat: number; lng: number; radius_meters: number };
         Returns: {

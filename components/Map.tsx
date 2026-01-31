@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import maplibregl from "maplibre-gl";
 import { supabase } from "@/lib/supabase";
+import { useI18n, type Locale, translateText } from "@/lib/i18n";
 
 interface SightingView {
   id: string;
@@ -25,46 +26,198 @@ if (typeof document !== "undefined") {
   }
 }
 
+// Cluster using pixel distance on screen — 60px threshold
+const CLUSTER_PX = 60;
+
+interface Cluster {
+  lng: number;
+  lat: number;
+  sightings: SightingView[];
+}
+
+function clusterSightings(sightings: SightingView[], map: maplibregl.Map): Cluster[] {
+  const clusters: Cluster[] = [];
+  const assigned = new Set<string>();
+
+  // Project all sightings to screen pixels
+  const projected = sightings.map((s) => ({
+    s,
+    px: map.project([s.lng, s.lat]),
+  }));
+
+  for (const { s, px } of projected) {
+    if (assigned.has(s.id)) continue;
+
+    const nearby: SightingView[] = [];
+    for (const other of projected) {
+      if (assigned.has(other.s.id)) continue;
+      const dx = other.px.x - px.x;
+      const dy = other.px.y - px.y;
+      if (dx * dx + dy * dy < CLUSTER_PX * CLUSTER_PX) {
+        nearby.push(other.s);
+      }
+    }
+
+    nearby.forEach((n) => assigned.add(n.id));
+
+    const avgLng = nearby.reduce((sum, n) => sum + n.lng, 0) / nearby.length;
+    const avgLat = nearby.reduce((sum, n) => sum + n.lat, 0) / nearby.length;
+
+    clusters.push({ lng: avgLng, lat: avgLat, sightings: nearby });
+  }
+
+  return clusters;
+}
+
+type TimeFilter = "all" | "30m" | "1h" | "2h";
+
+const FILTER_MS: Record<TimeFilter, number> = {
+  all: Infinity,
+  "30m": 30 * 60 * 1000,
+  "1h": 60 * 60 * 1000,
+  "2h": 2 * 60 * 60 * 1000,
+};
+
+function relativeTime(dateStr: string, t: ReturnType<typeof useI18n>["t"]): string {
+  const mins = Math.floor((Date.now() - new Date(dateStr).getTime()) / 60000);
+  if (mins < 1) return t.justNow;
+  if (mins < 60) return t.minutesAgo(mins);
+  return t.hoursAgo(Math.floor(mins / 60));
+}
+
+function ageOpacity(dateStr: string): number {
+  const hours = (Date.now() - new Date(dateStr).getTime()) / 3600000;
+  return Math.max(0.4, 1 - hours * 0.1);
+}
+
 export default function Map() {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
-  const markersRef = useRef<Record<string, maplibregl.Marker>>({});
+  const markersRef = useRef<maplibregl.Marker[]>([]);
+  const sightingsRef = useRef<SightingView[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [timeFilter, setTimeFilter] = useState<TimeFilter>("all");
+  const timeFilterRef = useRef<TimeFilter>("all");
+  const { t, locale } = useI18n();
+  const tRef = useRef(t);
+  tRef.current = t;
+  const localeRef = useRef<Locale>(locale);
+  localeRef.current = locale;
 
-  const addSightingMarker = useCallback((sighting: SightingView) => {
+  const renderMarkers = useCallback((newIds?: Set<string>) => {
     const map = mapRef.current;
-    if (!map || markersRef.current[sighting.id]) return;
+    if (!map) return;
+    const t = tRef.current;
+    const filter = timeFilterRef.current;
 
-    const el = document.createElement("div");
-    el.className = "sighting-marker";
-    el.title = sighting.description || "ICE sighting reported";
+    // Remove old markers
+    markersRef.current.forEach((m) => m.remove());
+    markersRef.current = [];
 
-    const marker = new maplibregl.Marker({ element: el })
-      .setLngLat([sighting.lng, sighting.lat])
-      .setPopup(
-        new maplibregl.Popup({ offset: 25 }).setHTML(
-          `<div style="color:#000;font-size:14px">
-            <strong>ICE Sighting</strong>
-            ${sighting.description ? `<p style="margin:4px 0 0">${sighting.description}</p>` : ""}
+    // Apply time filter
+    const now = Date.now();
+    const cutoff = FILTER_MS[filter];
+    const filtered = cutoff === Infinity
+      ? sightingsRef.current
+      : sightingsRef.current.filter((s) => now - new Date(s.created_at).getTime() < cutoff);
+
+    const clusters = clusterSightings(filtered, map);
+
+    for (const cluster of clusters) {
+      const count = cluster.sightings.length;
+      const isNew = newIds && cluster.sightings.some((s) => newIds.has(s.id));
+      const latest = cluster.sightings[0];
+
+      const el = document.createElement("div");
+
+      if (count > 1) {
+        el.className = `sighting-cluster${isNew ? " sighting-new" : ""}`;
+        el.textContent = String(count);
+        el.style.opacity = String(ageOpacity(latest.created_at));
+        el.addEventListener("click", (e) => {
+          e.stopPropagation();
+          map.flyTo({ center: [cluster.lng, cluster.lat], zoom: Math.min(map.getZoom() + 3, 18) });
+        });
+      } else {
+        el.className = `sighting-dot-wrapper${isNew ? " sighting-new" : ""}`;
+        el.style.opacity = String(ageOpacity(latest.created_at));
+
+        const dot = document.createElement("div");
+        dot.className = "sighting-marker";
+
+        const label = document.createElement("span");
+        label.className = "sighting-time-label";
+        label.textContent = relativeTime(latest.created_at, t);
+
+        el.appendChild(dot);
+        el.appendChild(label);
+      }
+
+      const currentLocale = localeRef.current;
+
+      const buildPopupHtml = (descriptions: (string | null)[]) => {
+        if (count > 1) {
+          return `<div style="color:#000;font-size:14px">
+            <strong>${t.iceSightings(count)}</strong>
             <p style="margin:4px 0 0;font-size:12px;color:#666">
-              ${new Date(sighting.created_at).toLocaleTimeString()}
+              ${t.latest}: ${new Date(latest.created_at).toLocaleTimeString()}
             </p>
-          </div>`
-        )
-      )
-      .addTo(map);
+            ${descriptions
+              .slice(0, 3)
+              .map((d) => d ? `<p style="margin:4px 0 0;font-size:12px">${d}</p>` : "")
+              .join("")}
+            ${count > 3 ? `<p style="margin:4px 0 0;font-size:11px;color:#999">${t.more(count - 3)}</p>` : ""}
+          </div>`;
+        }
+        return `<div style="color:#000;font-size:14px">
+            <strong>${t.iceSighting}</strong>
+            ${descriptions[0] ? `<p style="margin:4px 0 0">${descriptions[0]}</p>` : ""}
+            <p style="margin:4px 0 0;font-size:12px;color:#666">
+              ${new Date(latest.created_at).toLocaleTimeString()}
+            </p>
+          </div>`;
+      };
 
-    markersRef.current[sighting.id] = marker;
+      const descriptions = cluster.sightings.map((s) => s.description);
+      const popup = new maplibregl.Popup({ offset: 25 }).setHTML(buildPopupHtml(descriptions));
+
+      const marker = new maplibregl.Marker({ element: el })
+        .setLngLat([cluster.lng, cluster.lat]);
+
+      if (count === 1) {
+        marker.setPopup(popup);
+      }
+
+      // Translate descriptions asynchronously when locale is not English
+      if (currentLocale !== "en") {
+        const textsToTranslate = descriptions.filter((d): d is string => !!d);
+        if (textsToTranslate.length > 0) {
+          Promise.all(
+            textsToTranslate.map((d) => translateText(d, "en", currentLocale))
+          ).then((translated) => {
+            let idx = 0;
+            const translatedDescs = descriptions.map((d) =>
+              d ? translated[idx++] : null
+            );
+            popup.setHTML(buildPopupHtml(translatedDescs));
+          });
+        }
+      }
+
+      marker.addTo(map);
+
+      markersRef.current.push(marker);
+    }
   }, []);
 
   // Initialize map
   useEffect(() => {
     if (!containerRef.current) return;
 
-    // Prevent double-init
     if (mapRef.current) {
       mapRef.current.remove();
       mapRef.current = null;
-      markersRef.current = {};
+      markersRef.current = [];
     }
 
     const map = new maplibregl.Map({
@@ -77,14 +230,18 @@ export default function Map() {
     map.addControl(new maplibregl.NavigationControl(), "top-right");
     mapRef.current = map;
 
+    map.on("load", () => setLoading(false));
+    map.on("moveend", () => renderMarkers());
+
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const coords: [number, number] = [pos.coords.longitude, pos.coords.latitude];
         map.flyTo({ center: coords, zoom: 13 });
 
-        new maplibregl.Marker({ color: "#3b82f6" })
+        const userEl = document.createElement("div");
+        userEl.className = "user-marker";
+        new maplibregl.Marker({ element: userEl })
           .setLngLat(coords)
-          .setPopup(new maplibregl.Popup().setText("You are here"))
           .addTo(map);
       },
       () => {},
@@ -94,20 +251,33 @@ export default function Map() {
     return () => {
       map.remove();
       mapRef.current = null;
-      markersRef.current = {};
+      markersRef.current = [];
     };
   }, []);
+
+  // Sync filter ref and re-render
+  useEffect(() => {
+    timeFilterRef.current = timeFilter;
+    renderMarkers();
+  }, [timeFilter, renderMarkers]);
+
+  // Re-render markers when language changes
+  useEffect(() => {
+    renderMarkers();
+  }, [t, renderMarkers]);
 
   // Load sightings and subscribe to realtime
   useEffect(() => {
     async function loadSightings() {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from("sightings_view")
         .select("*")
         .order("created_at", { ascending: false });
 
-      console.log("Sightings loaded:", data, "Error:", error);
-      (data as SightingView[] | null)?.forEach(addSightingMarker);
+      if (data) {
+        sightingsRef.current = data as SightingView[];
+        renderMarkers();
+      }
     }
 
     loadSightings();
@@ -125,7 +295,10 @@ export default function Map() {
             .limit(1);
 
           const latest = (data as SightingView[] | null)?.[0];
-          if (latest) addSightingMarker(latest);
+          if (latest && !sightingsRef.current.find((s) => s.id === latest.id)) {
+            sightingsRef.current = [latest, ...sightingsRef.current];
+            renderMarkers(new Set([latest.id]));
+          }
         }
       )
       .subscribe();
@@ -133,7 +306,36 @@ export default function Map() {
     return () => {
       channel.unsubscribe();
     };
-  }, [addSightingMarker]);
+  }, [renderMarkers]);
 
-  return <div ref={containerRef} style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} />;
+  const filters: TimeFilter[] = ["all", "30m", "1h", "2h"];
+  const filterLabels: Record<TimeFilter, string> = {
+    all: t.filterAll,
+    "30m": t.filter30m,
+    "1h": t.filter1h,
+    "2h": t.filter2h,
+  };
+
+  return (
+    <>
+      <div
+        ref={containerRef}
+        className={loading ? "map-loading" : "map-loaded"}
+        style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
+      />
+      {!loading && (
+        <div className="time-filter-bar">
+          {filters.map((f) => (
+            <button
+              key={f}
+              className={`time-filter-pill${timeFilter === f ? " time-filter-active" : ""}`}
+              onClick={() => setTimeFilter(f)}
+            >
+              {filterLabels[f]}
+            </button>
+          ))}
+        </div>
+      )}
+    </>
+  );
 }
